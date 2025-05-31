@@ -1,0 +1,9 @@
+[2023-11-20 14:15:22] CRITICAL: Disk full on /dev/sda1 (98% used)
+[2023-11-20 14:16:10] WARNING: High memory usage (89%)
+[2023-11-20 14:25:47] INFO: User 'jdoe' logged in from 192.168.1.105
+[2023-11-20 14:30:12] DEBUG: Query executed in 0.045s
+[2023-11-20 14:35:01] ERRoR: Failed to write to /var/log/app.log (Permission denied)
+[2023-11-20 14:40:18] WARNING: SSL certificate expires in 7 days
+[2023-11-20 14:45:55] CRITICAL: Service 'nginx' crashed (exit code 139)
+[2023-11-20 14:50:30] INFO: Backup started for /home/user/data
+[2023-11-20 14:55:42] ERroR: Invalid API key from 203.0.113.42
