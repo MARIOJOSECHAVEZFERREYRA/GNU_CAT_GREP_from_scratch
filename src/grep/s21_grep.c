@@ -16,18 +16,22 @@ static int compare_match(const void *a, const void *b) {
 static char** load_patterns_from_file(const char *fname, int *out_count) {
     FILE *f = fopen(fname, "r");
     if (!f) return NULL;
+
     char **pats = NULL;
     size_t cap = 0;
-    *out_count = 0;
-    char *line = NULL;
-    size_t len = 0;
+    *out_count = 0; //contador
+    char *line = NULL; // puntero al bloque de texto donde vamos a guardar temporalmente lo que leemos
+    size_t len = 0; //espacio temporal reservado para line
+    //aqui el getline saca por cada iteracion una linea
     while (getline(&line, &len, f) != -1) {
-        // quitar salto de línea
-        if (line[strlen(line)-1] == '\n') line[strlen(line)-1] = '\0';
+        // quitar salto de línea \n a \0
+        if (line[strlen(line)-1] == '\n')
+            line[strlen(line)-1] = '\0';
         if (*out_count >= (int)cap) {
             cap = cap ? cap*2 : 16;
             pats = realloc(pats, cap * sizeof(char*));
         }
+        //aqui copio yo el valor de la linea en **pats
         pats[(*out_count)++] = strdup(line);
     }
     free(line);
@@ -44,7 +48,8 @@ int main(int argc, char *argv[]) {
     while ((opt = getopt(argc, argv, "e:ivclnhsf:o")) != -1) {
         switch (opt) {
             case 'e':
-                patterns[pat_count++] = optarg; flags.e = 1;
+                patterns[pat_count++] = optarg;
+                flags.e = 1;
                 break;
             case 'i': flags.i = 1; break;
             case 'v': flags.v = 1; break;
@@ -76,16 +81,17 @@ int main(int argc, char *argv[]) {
     }
 
     argc -= optind; argv += optind;
+    //esto es si no se uso -e o -f
     if (pat_count == 0) {
-        if (argc > 0) {
+        if (argc > 0) { // si al menos se ingreso un patron a buscar
             patterns[pat_count++] = argv[0];
-            argv++; argc--;
+            argv++; argc--; // se quita ese argumento de la lista de ficheros
         } else {
             fprintf(stderr, "grep: missing pattern\n");
             return 1;
         }
     }
-
+    //esto es para trabajar con los archivos de la lista de ficheros
     int total_files = argc;
     if (total_files == 0) {
         grep_file(NULL, patterns, pat_count, flags, total_files);
