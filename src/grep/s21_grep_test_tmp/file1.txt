@@ -1,0 +1,6 @@
+Hello World
+hello world
+This is a test file.
+123 456 789
+Regex: [a-z]+
+MixedCASE line.

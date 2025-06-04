@@ -1,0 +1,5 @@
+123
+abc123def
+no_digits_here
+9999
+symbols: *+?.^$

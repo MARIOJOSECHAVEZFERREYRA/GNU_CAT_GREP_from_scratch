@@ -1,3 +1,4 @@
+/* s21_grep.h */
 #ifndef _S21_GREP_H_
 #define _S21_GREP_H_
 
@@ -13,7 +14,7 @@ typedef struct {
     int l;      // -l
     int n;      // -n
     int h;      // -h
-    int s;      // -s:
+    int s;      // -s
     int o;      // -o
 } Flags;
 
