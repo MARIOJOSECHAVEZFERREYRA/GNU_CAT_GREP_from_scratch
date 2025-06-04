@@ -7,7 +7,15 @@
 #include <errno.h>
 
 // Para ordenar rangos de match
-typedef struct { size_t so, eo; } Match;
+typedef struct{
+    size_t so; // start_offset posicion respecto al inicio de la linea donde arranca la subcadena que matchea
+    size_t eo; // end_offset posicion final
+} Match;
+
+//compara dos Match fijandose solo so,
+//-1: si A comienza antes que B
+// 1: SI A comienza despues de B
+// 0: si ambos empiezan en la misma poscion
 static int compare_match(const void *a, const void *b) {
     const Match *A = a, *B = b;
     return (A->so < B->so) ? -1 : (A->so > B->so);
@@ -108,8 +116,7 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void grep_file(const char *filename, char **patterns, int pat_count,
-               Flags flags, int total_files) {
+void grep_file(const char *filename, char **patterns, int pat_count, Flags flags, int total_files) {
     FILE *f = filename ? fopen(filename, "r") : stdin;
     if (!f) {
         if (!flags.s) perror(filename);
@@ -117,59 +124,74 @@ void grep_file(const char *filename, char **patterns, int pat_count,
     }
 
     // compilamos todos los patrones
-    regex_t *regs = malloc(pat_count * sizeof(regex_t));
-    int regc_flags = flags.i ? REG_ICASE : 0;
+    regex_t *regs = malloc(pat_count * sizeof(regex_t)); //aqui se supone que se reserva memoria para objetos regex_t
+    //lo suficiente para almacenar pat_cout
+    int regc_flags = flags.i ? REG_ICASE : 0; // esto si se entiende es para los case sensitive -i
     for (int p = 0; p < pat_count; p++) {
+        //aqui abajo se compila el patron regex y luego se lo guarda en &regs[p]
+        //basicamente en &regs[p] se almacena el patron analizado listo para usar
         if (regcomp(&regs[p], patterns[p], regc_flags) != 0) {
             fprintf(stderr, "Invalid regex: %s\n", patterns[p]);
-            while (p--) regfree(&regs[p]);
-            free(regs);
+            // debajo se libera la memoria de todos los regs[p]
+            while (p--)
+                regfree(&regs[p]); // aqui se libera la memoria interna de cada regex_t compilado en regcomp
+            free(regs); // se libea el array regs
             if (f != stdin) fclose(f);
             return;
         }
     }
 
-    char *line = NULL; size_t len = 0;
+    //estas tres variables es para getline
+    char *line = NULL;
+    size_t len = 0;
     ssize_t read;
-    int   line_no      = 1;
-    int   match_count  = 0;
-    int   matched_file = 0;
+
+    int   line_no      = 1; // contador de lineas para -n
+    int   match_count  = 0; // contador de matches para -c
+    int   matched_file = 0; // contador booleano para -l
 
     while ((read = getline(&line, &len, f)) != -1) {
         // recogemos todos los matches de todos los patrones
         Match *matches = malloc(sizeof(Match) * 128);
-        int   mcap    = 128, mcount = 0;
+        int mcap = 128; //capacidad actual de arreglo de matches
+        int mcount = 0; // numero actual de coincidencias encontradas
 
         for (int p = 0; p < pat_count; p++) {
             char *cursor = line;
-            regmatch_t pm;
+            regmatch_t pm; // otro struct que guarda so y eo de una coincidencia encontrada en regexec
             while (regexec(&regs[p], cursor, 1, &pm, 0) == 0) {
+                // calculo para guardar la posicion del match en so y eo
                 size_t so = (cursor - line) + pm.rm_so;
                 size_t eo = (cursor - line) + pm.rm_eo;
+                //lo de abajo es simplemente para agrandar matches
                 if (mcount >= mcap) {
                     mcap *= 2;
                     matches = realloc(matches, mcap * sizeof(Match));
                 }
+                //aqui se almacena la posicion del match
                 matches[mcount++] = (Match){so, eo};
+                //aqui se actualiza la posicion de cursor con la del ultimo caracter del patron encontrado
                 cursor += pm.rm_eo;
             }
         }
 
         int any_match = (mcount > 0);
+        // para -v anulamos simplemente los patrones encontrados
         if (flags.v) any_match = !any_match;
         if (any_match) {
             matched_file = 1;
             match_count++;
         }
 
-        // impresión: ni -c ni -l
+        // verifica si hay coincidencias y tabien si no hay -c ni -l
         if (any_match && !flags.c && !flags.l) {
-            // prefijos
+            // if si hay mas de un archivo y tambien si no hay -h
             if (!flags.h && filename && total_files > 1)
                 printf("%s:", filename);
+            //imprime el numero si es que hay -n
             if (flags.n)
                 printf("%d:", line_no);
-
+            //si hay -o solo imprime las coincidencias, sin -v
             if (flags.o && !flags.v) {
                 // solo coincidencias, una por línea
                 for (int i = 0; i < mcount; i++) {
@@ -178,18 +200,23 @@ void grep_file(const char *filename, char **patterns, int pat_count,
                         line + matches[i].so);
                 }
             } else if (flags.v) {
+                //si llegamos aqui es que no hubo coincidencias en la linea y pues se imprime la linea
                 fputs(line, stdout);
             } else {
-                // resaltado sobre línea completa
+                // Ordenar todas las coincidencias por posicion de inicio
                 qsort(matches, mcount, sizeof(Match), compare_match);
                 size_t cur = 0;
                 for (int i = 0; i < mcount; i++) {
+                    //imprime texto antes de la coincidencia, sin color
                     printf("%.*s", (int)(matches[i].so - cur), line + cur);
+                    // imprime la coincidencia
                     printf("\033[31m%.*s\033[0m",
                         (int)(matches[i].eo - matches[i].so),
                         line + matches[i].so);
+                    // avanza cur al final de la coincidncia
                     cur = matches[i].eo;
                 }
+                //imprime el resto desde cur hasta el final
                 printf("%s", line + cur);
             }
         }
