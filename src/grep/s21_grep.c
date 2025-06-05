@@ -330,6 +330,7 @@ Result grep_file(const char *filename, char **patterns, int pat_count,
 
   int line_no = 1;
   int match_count = 0;  // para -c
+  int matched_file = 0; // para -l
   int stop_processing = 0;
 
   while (!stop_processing && (nread = getline(&line, &len, f)) != -1) {
@@ -419,6 +420,7 @@ Result grep_file(const char *filename, char **patterns, int pat_count,
       if (filename) {
         printf("%s\n", filename);
       }
+      free(matches);
       stop_processing = 1;
     }
 
