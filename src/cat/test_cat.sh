@@ -6,11 +6,11 @@ COUNT=0
 DIFFERENCE=""
 
 print_success() {
-    echo -e "\e[32m$1: SUCCESS\e[0m"
+    echo "$1: SUCCESS"
 }
 
 print_fail() {
-    echo -e "\e[31m$1: FAIL: cat $2\e[0m"
+    echo "$1: FAIL: cat $2"
 }
 
 declare -a tests=(
@@ -106,4 +106,3 @@ echo
 echo "TOTAL FAILS: $FAIL"
 echo "TOTAL SUCCESSES: $SUCCESS"
 echo "ALL: $COUNT"
-
