@@ -15,29 +15,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-typedef struct {
-  int e;      // -e
-  int i;      // -i
-  int v;      // -v
-  int c;      // -c
-  int l;      // -l
-  int n;      // -n
-  int h;      // -h
-  int s;      // -s
-  int o;      // -o
-} Flags;
+#include "s21_grep.h"
 
 typedef struct {
   size_t so;
   size_t eo;
 } Match;
 
-// --------------------------------------------------
-// Variables globales para determinar el código de salida
-// --------------------------------------------------
-static int any_match_global = 0; // =1 si al menos un match en cualquier fichero
-static int any_error = 0; // =1 si hubo error de uso o no pudo abrir fichero
 
 static int compare_match(const void *a, const void *b) {
   const Match *A = (const Match *) a;
@@ -73,6 +57,8 @@ static char **load_patterns_from_file(const char *fname, int *out_count) {
       line[nread - 1] = '\0';
       nread--;
     }
+    if (nread == 0)
+      continue;
     if (*out_count >= cap) {
       cap = cap ? cap * 2 : 16;
       char **tmp = realloc(pats, cap * sizeof(char *));
@@ -87,7 +73,7 @@ static char **load_patterns_from_file(const char *fname, int *out_count) {
       }
       pats = tmp;
     }
-    pats[*out_count++] = strdup(line);
+    pats[*out_count] = strdup(line);
     if (!pats[*out_count]) {
       // Return null if strdup couldnt work
       for (int i = 0; i < *out_count; i++)
@@ -105,12 +91,12 @@ static char **load_patterns_from_file(const char *fname, int *out_count) {
   return pats;
 }
 
-static void grep_file(const char *filename, char **patterns, int pat_count,
-                      Flags flags, int total_files);
 
 int main(int argc, char *argv[]) {
   Flags flags = {0};
   int opt;
+  int any_match_global = 0;
+  int any_error = 0;
 
   // Reservamos espacio para 'argc' patrones como máximo
   int cap = argc;
@@ -246,10 +232,18 @@ int main(int argc, char *argv[]) {
   // File proccessing
   int total_files = argc;
   if (total_files == 0) {
-    grep_file(NULL, patterns, pat_count, flags, total_files);
+    Result r = grep_file(NULL, patterns, pat_count, flags, total_files);
+    if (r.match_found)
+      any_match_global = 1;
+    if (r.error)
+      any_error = 1;
   } else {
     for (int i = 0; i < total_files; i++) {
-      grep_file(argv[i], patterns, pat_count, flags, total_files);
+      Result r = grep_file(argv[i], patterns, pat_count, flags, total_files);
+      if (r.match_found)
+        any_match_global = 1;
+      if (r.error)
+        any_error = 1;
     }
   }
 
@@ -288,15 +282,16 @@ int main(int argc, char *argv[]) {
 //   de rango. • Aplica flags: -v, -l, -c, -n, -h, -o tal cual lo haría grep. •
 //   Al final cierra fichero y libera todo.
 // =======================================================================
-static void grep_file(const char *filename, char **patterns, int pat_count,
-                      Flags flags, int total_files) {
+Result grep_file(const char *filename, char **patterns, int pat_count,
+                 Flags flags, int total_files) {
+  Result res = {0, 0};
   FILE *f = filename ? fopen(filename, "r") : stdin;
   if (!f) {
     if (!flags.s) {
       perror(filename);
     }
-    any_error = 1;
-    return;
+    res.error = 1;
+    return res;
   }
 
   // --------------------------------------------------
@@ -307,8 +302,8 @@ static void grep_file(const char *filename, char **patterns, int pat_count,
     fprintf(stderr, "Memory allocation failure\n");
     if (f != stdin)
       fclose(f);
-    any_error = 1;
-    return;
+    res.error = 1;
+    return res;
   }
   int regc_flags = flags.i ? REG_ICASE : 0;
   for (int p = 0; p < pat_count; p++) {
@@ -321,8 +316,8 @@ static void grep_file(const char *filename, char **patterns, int pat_count,
       free(regs);
       if (f != stdin)
         fclose(f);
-      any_error = 1;
-      return;
+      res.error = 1;
+      return res;
     }
   }
 
@@ -335,9 +330,9 @@ static void grep_file(const char *filename, char **patterns, int pat_count,
 
   int line_no = 1;
   int match_count = 0;  // para -c
-  int matched_file = 0; // para -l
+  int stop_processing = 0;
 
-  while ((nread = getline(&line, &len, f)) != -1) {
+  while ((nread = getline(&line, &len, f)) != -1 && !stop_processing) {
     // Suprimir '\n' para que ^$ funcione exactamente como grep
     if (nread > 0 && line[nread - 1] == '\n') {
       line[nread - 1] = '\0';
@@ -357,10 +352,12 @@ static void grep_file(const char *filename, char **patterns, int pat_count,
       free(regs);
       if (f != stdin)
         fclose(f);
-      any_error = 1;
-      return;
+      res.error = 1;
+      return res;
     }
     int mcount = 0;
+
+    int any_match_in_line = 0;  // Controlar si hay coincidencias en la línea
 
     for (int p = 0; p < pat_count; p++) {
       char *cursor = line;
@@ -369,89 +366,88 @@ static void grep_file(const char *filename, char **patterns, int pat_count,
       // Buscamos múltiples ocurrencias del patrón p
       while (cursor <= line + nread) {
         int ret = regexec(&regs[p], cursor, 1, &pm, 0);
-        if (ret != 0)
-          break; // -1 o REG_NOMATCH → no hay más
-
-        // Si aquí hay match, guardamos su rango
-        size_t so = (cursor - line) + pm.rm_so;
-        size_t eo = (cursor - line) + pm.rm_eo;
-
-        if (mcount >= mcap) {
-          mcap *= 2;
-          Match *tmp = realloc(matches, mcap * sizeof(Match));
-          if (!tmp) {
-            fprintf(stderr, "Memory allocation failure\n");
-            free(matches);
-            free(line);
-            for (int q = 0; q < pat_count; q++)
-              regfree(&regs[q]);
-            free(regs);
-            if (f != stdin)
-              fclose(f);
-            any_error = 1;
-            return;
-          }
-          matches = tmp;
-        }
-        matches[mcount].so = so;
-        matches[mcount].eo = eo;
-        mcount++;
-
-        // Evitar bucle infinito si rm_eo == rm_so
-        if (pm.rm_eo > pm.rm_so) {
-          cursor += pm.rm_eo;
+        if (ret != 0) {
+          cursor = line + nread + 1;
         } else {
-          cursor += 1;
+          // Si aquí hay match, guardamos su rango
+          size_t so = (cursor - line) + pm.rm_so;
+          size_t eo = (cursor - line) + pm.rm_eo;
+
+          if (mcount >= mcap) {
+            mcap *= 2;
+            Match *tmp = realloc(matches, mcap * sizeof(Match));
+            if (!tmp) {
+              fprintf(stderr, "Memory allocation failure\n");
+              free(matches);
+              free(line);
+              for (int q = 0; q < pat_count; q++)
+                regfree(&regs[q]);
+              free(regs);
+              if (f != stdin)
+                fclose(f);
+              res.error = 1;
+              return res;
+            }
+            matches = tmp;
+          }
+          matches[mcount].so = so;
+          matches[mcount].eo = eo;
+          mcount++;
+
+          // Evitar bucle infinito si rm_eo == rm_so
+          if (pm.rm_eo > pm.rm_so) {
+            cursor += pm.rm_eo;
+            any_match_in_line = 1;  // Marcar que hubo coincidencia
+          } else {
+            cursor = line + nread + 1;
+          }
+
+          // Si el cursor avanza más allá del final, cortamos
+          if (cursor > line + nread)
+            cursor = line + nread + 1;
         }
-        // Si el cursor avanza más allá del final, cortamos
-        if (cursor > line + nread)
-          break;
       }
     }
 
-    int any_match = (mcount > 0);
+    // 4) Si -v, negamos las coincidencias
+    int final_match = any_match_in_line;
     if (flags.v)
-      any_match = !any_match;
-    if (any_match)
-      any_match_global = 1;
+      final_match = !final_match;
 
-    // --------------------------------------------------
-    // 4) Si -l y encontramos match: imprimimos nombre de archivo y cortamos
-    // --------------------------------------------------
-    if (flags.l && any_match) {
+    if (final_match) {
+      res.match_found = 1;
+    }
+
+    // 5) Si -l y encontramos match: imprimimos nombre de archivo y cortamos
+    if (flags.l && final_match) {
       if (filename) {
         printf("%s\n", filename);
-        matched_file = 1;
       }
-      free(matches);
-      break; // dejamos de procesar líneas de este fichero
+      stop_processing = 1; // Usamos esta variable para evitar la necesidad de 'break'
     }
 
-    // --------------------------------------------------
-    // 5) Si hay coincidencia y no -l, contamos para -c
-    // --------------------------------------------------
-    if (any_match && !flags.l)
+    // 6) Si hay coincidencia y no -l, contamos para -c
+    if (final_match && !flags.l)
       match_count++;
 
-    // --------------------------------------------------
-    // 6) Si any_match y no -c ni -l, imprimimos según -o/-n/-h
-    // --------------------------------------------------
-    if (any_match && !flags.c && !flags.l) {
-      // Caso “solo coincidencias” (-o y sin -v)
+    // 7) Si any_match y no -c ni -l, imprimimos según -o/-n/-h
+    if (final_match && !flags.c && !flags.l) {
       if (flags.o && !flags.v) {
         if (mcount > 1)
           qsort(matches, mcount, sizeof(Match), compare_match);
         for (int mi = 0; mi < mcount; mi++) {
-          if (!flags.h && filename && total_files > 1)
-            printf("%s:", filename);
-          if (flags.n)
-            printf("%d:", line_no);
-          printf("%.*s\n", (int)(matches[mi].eo - matches[mi].so),
-                 line + matches[mi].so);
+          int dup = (mi > 0 && matches[mi].so == matches[mi - 1].so &&
+                     matches[mi].eo == matches[mi - 1].eo);
+          if (!dup) {
+            if (!flags.h && filename && total_files > 1)
+              printf("%s:", filename);
+            if (flags.n)
+              printf("%d:", line_no);
+            printf("%.*s\n", (int)(matches[mi].eo - matches[mi].so),
+                   line + matches[mi].so);
+          }
         }
-      }
-      // Caso imprimir línea completa
-      else if (!flags.o) {
+      } else if (!flags.o) {
         if (!flags.h && filename && total_files > 1)
           printf("%s:", filename);
         if (flags.n)
@@ -463,22 +459,19 @@ static void grep_file(const char *filename, char **patterns, int pat_count,
     free(matches);
   }
 
-  // --------------------------------------------------
-  // 7) Si -c y no imprimimos ya con -l, imprimimos conteo
-  // --------------------------------------------------
-  if (flags.c && !(flags.l && matched_file)) {
+  // 8) Si -c y no imprimimos ya con -l, imprimimos conteo
+  if (flags.c && !flags.l) {
     if (!flags.h && filename && total_files > 1)
       printf("%s:", filename);
     printf("%d\n", match_count);
   }
 
-  // --------------------------------------------------
-  // 8) Liberar regex y buffer de línea
-  // --------------------------------------------------
+  // 9) Liberar regex y buffer de línea
   for (int p = 0; p < pat_count; p++)
     regfree(&regs[p]);
   free(regs);
   free(line);
   if (f != stdin)
     fclose(f);
+  return res;
 }

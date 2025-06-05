@@ -1,149 +1,136 @@
------ TEST 87 FAILED -----
+----- TEST 88 FAILED -----
 Command: grep -e ^int -f test1.txt test2.txt test1.txt
-grep      exit code: 0
-s21_grep  exit code: 2
-Diff stdout:
-    1,38d0
-    < test2.txt:
-    < test2.txt:str          !
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:				KJHJHJHJHJH
-    < test2.txt:				+_)(*&^%$#@)
-    < test2.txt:
-    < test2.txt:	 end.
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test1.txt:WARNING
-    < test1.txt:Str !
-    < test1.txt:
-    < test1.txt:    Sdfshg sfgjhf sjhf Sdfbjhd
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:                
-    < test1.txt:        S
-    < test1.txt:
-    < test1.txt:    45 45 2
-    < test1.txt:
-    < test1.txt:    D sd.Jhj fwfs D2f Sdks Ves
-    < test1.txt:
-    < test1.txt:        end.
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:	
-    < test1.txt:    
-    < test1.txt:Hi Vshe he Vs vS vsvs VS
-
------ TEST 240 FAILED -----
-Command: grep -e ^int -i -f test1.txt test2.txt test1.txt
-grep      exit code: 0
-s21_grep  exit code: 2
-Diff stdout:
-    1,38d0
-    < test2.txt:
-    < test2.txt:str          !
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:				KJHJHJHJHJH
-    < test2.txt:				+_)(*&^%$#@)
-    < test2.txt:
-    < test2.txt:	 end.
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test2.txt:
-    < test1.txt:WARNING
-    < test1.txt:Str !
-    < test1.txt:
-    < test1.txt:    Sdfshg sfgjhf sjhf Sdfbjhd
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:                
-    < test1.txt:        S
-    < test1.txt:
-    < test1.txt:    45 45 2
-    < test1.txt:
-    < test1.txt:    D sd.Jhj fwfs D2f Sdks Ves
-    < test1.txt:
-    < test1.txt:        end.
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:
-    < test1.txt:	
-    < test1.txt:    
-    < test1.txt:Hi Vshe he Vs vS vsvs VS
-
------ TEST 303 FAILED -----
-Command: grep -e ^int -v -f test1.txt test2.txt test1.txt
-grep      exit code: 1
-s21_grep  exit code: 2
-Diff stdout:
-
------ TEST 310 FAILED -----
-Command: grep S -c -l test1.txt test2.txt test1.txt
 grep      exit code: 0
 s21_grep  exit code: 0
 Diff stdout:
-    1a2
-    > test2.txt:0
+    1d0
+    < test2.txt:
+    3,4d1
+    < test2.txt:
+    < test2.txt:
+    7d3
+    < test2.txt:
+    9,16d4
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    19d6
+    < test1.txt:
+    21,24d7
+    < test1.txt:
+    < test1.txt:
+    < test1.txt:
+    < test1.txt:
+    27d9
+    < test1.txt:
+    29d10
+    < test1.txt:
+    31d11
+    < test1.txt:
+    33,35d12
+    < test1.txt:
+    < test1.txt:
+    < test1.txt:
 
------ TEST 312 FAILED -----
-Command: grep -e ^int -c -l test1.txt test2.txt test1.txt
-grep      exit code: 1
-s21_grep  exit code: 1
+----- TEST 241 FAILED -----
+Command: grep -e ^int -i -f test1.txt test2.txt test1.txt
+grep      exit code: 0
+s21_grep  exit code: 0
 Diff stdout:
-    0a1,3
-    > test1.txt:0
-    > test2.txt:0
-    > test1.txt:0
+    1d0
+    < test2.txt:
+    3,4d1
+    < test2.txt:
+    < test2.txt:
+    7d3
+    < test2.txt:
+    9,16d4
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    < test2.txt:
+    19d6
+    < test1.txt:
+    21,24d7
+    < test1.txt:
+    < test1.txt:
+    < test1.txt:
+    < test1.txt:
+    27d9
+    < test1.txt:
+    29d10
+    < test1.txt:
+    31d11
+    < test1.txt:
+    33,35d12
+    < test1.txt:
+    < test1.txt:
+    < test1.txt:
 
------ TEST 357 FAILED -----
+----- TEST 304 FAILED -----
+Command: grep -e ^int -v -f test1.txt test2.txt test1.txt
+grep      exit code: 1
+s21_grep  exit code: 0
+Diff stdout:
+    0a1,23
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test2.txt:
+    > test1.txt:
+    > test1.txt:
+    > test1.txt:
+    > test1.txt:
+    > test1.txt:
+    > test1.txt:
+    > test1.txt:
+    > test1.txt:
+    > test1.txt:
+    > test1.txt:
+    > test1.txt:
+
+----- TEST 358 FAILED -----
 Command: grep -e ^int -c -f test1.txt test2.txt test1.txt
 grep      exit code: 0
-s21_grep  exit code: 2
+s21_grep  exit code: 0
 Diff stdout:
-    1,2d0
+    1,2c1,2
     < test2.txt:16
     < test1.txt:22
+    ---
+    > test2.txt:4
+    > test1.txt:11
 
------ TEST 402 FAILED -----
-Command: grep -e ^int -l -f test1.txt test2.txt test1.txt
-grep      exit code: 0
-s21_grep  exit code: 2
-Diff stdout:
-    1,2d0
-    < test2.txt
-    < test1.txt
-
------ TEST 438 FAILED -----
+----- TEST 439 FAILED -----
 Command: grep -e ^int -n -f test1.txt test2.txt test1.txt
 grep      exit code: 0
-s21_grep  exit code: 2
+s21_grep  exit code: 0
 Diff stdout:
-    1,38d0
+    1d0
     < test2.txt:1:
-    < test2.txt:2:str          !
+    3,4d1
     < test2.txt:3:
     < test2.txt:4:
-    < test2.txt:5:				KJHJHJHJHJH
-    < test2.txt:6:				+_)(*&^%$#@)
+    7d3
     < test2.txt:7:
-    < test2.txt:8:	 end.
+    9,16d4
     < test2.txt:9:
     < test2.txt:10:
     < test2.txt:11:
@@ -152,44 +139,37 @@ Diff stdout:
     < test2.txt:14:
     < test2.txt:15:
     < test2.txt:16:
-    < test1.txt:1:WARNING
-    < test1.txt:2:Str !
+    19d6
     < test1.txt:3:
-    < test1.txt:4:    Sdfshg sfgjhf sjhf Sdfbjhd
+    21,24d7
     < test1.txt:5:
     < test1.txt:6:
     < test1.txt:7:
     < test1.txt:8:
-    < test1.txt:9:                
-    < test1.txt:10:        S
+    27d9
     < test1.txt:11:
-    < test1.txt:12:    45 45 2
+    29d10
     < test1.txt:13:
-    < test1.txt:14:    D sd.Jhj fwfs D2f Sdks Ves
+    31d11
     < test1.txt:15:
-    < test1.txt:16:        end.
+    33,35d12
     < test1.txt:17:
     < test1.txt:18:
     < test1.txt:19:
-    < test1.txt:20:	
-    < test1.txt:21:    
-    < test1.txt:22:Hi Vshe he Vs vS vsvs VS
 
------ TEST 465 FAILED -----
+----- TEST 466 FAILED -----
 Command: grep -e ^int -h -f test1.txt test2.txt test1.txt
 grep      exit code: 0
-s21_grep  exit code: 2
+s21_grep  exit code: 0
 Diff stdout:
-    1,38d0
+    1d0
     < 
-    < str          !
+    3,4d1
     < 
     < 
-    < 				KJHJHJHJHJH
-    < 				+_)(*&^%$#@)
+    7d3
     < 
-    < 	 end.
-    < 
+    9,16d4
     < 
     < 
     < 
@@ -197,44 +177,38 @@ Diff stdout:
     < 
     < 
     < 
-    < WARNING
-    < Str !
     < 
-    <     Sdfshg sfgjhf sjhf Sdfbjhd
+    19d6
     < 
-    < 
-    < 
-    < 
-    <                 
-    <         S
-    < 
-    <     45 45 2
-    < 
-    <     D sd.Jhj fwfs D2f Sdks Ves
-    < 
-    <         end.
+    21,24d7
     < 
     < 
     < 
-    < 	
-    <     
-    < Hi Vshe he Vs vS vsvs VS
+    < 
+    27d9
+    < 
+    29d10
+    < 
+    31d11
+    < 
+    33,35d12
+    < 
+    < 
+    < 
 
------ TEST 483 FAILED -----
+----- TEST 484 FAILED -----
 Command: grep -e ^int -s -f test1.txt test2.txt test1.txt
 grep      exit code: 0
-s21_grep  exit code: 2
+s21_grep  exit code: 0
 Diff stdout:
-    1,38d0
+    1d0
     < test2.txt:
-    < test2.txt:str          !
+    3,4d1
     < test2.txt:
     < test2.txt:
-    < test2.txt:				KJHJHJHJHJH
-    < test2.txt:				+_)(*&^%$#@)
+    7d3
     < test2.txt:
-    < test2.txt:	 end.
-    < test2.txt:
+    9,16d4
     < test2.txt:
     < test2.txt:
     < test2.txt:
@@ -242,55 +216,45 @@ Diff stdout:
     < test2.txt:
     < test2.txt:
     < test2.txt:
-    < test1.txt:WARNING
-    < test1.txt:Str !
+    < test2.txt:
+    19d6
     < test1.txt:
-    < test1.txt:    Sdfshg sfgjhf sjhf Sdfbjhd
+    21,24d7
     < test1.txt:
     < test1.txt:
     < test1.txt:
     < test1.txt:
-    < test1.txt:                
-    < test1.txt:        S
+    27d9
     < test1.txt:
-    < test1.txt:    45 45 2
+    29d10
     < test1.txt:
-    < test1.txt:    D sd.Jhj fwfs D2f Sdks Ves
+    31d11
     < test1.txt:
-    < test1.txt:        end.
-    < test1.txt:
+    33,35d12
     < test1.txt:
     < test1.txt:
-    < test1.txt:	
-    < test1.txt:    
-    < test1.txt:Hi Vshe he Vs vS vsvs VS
+    < test1.txt:
 
------ TEST 492 FAILED -----
+----- TEST 493 FAILED -----
 Command: grep -e ^int -o -f test1.txt test2.txt test1.txt
 grep      exit code: 0
-s21_grep  exit code: 2
+s21_grep  exit code: 0
 Diff stdout:
-    1,22d0
-    < test2.txt:    
-    < test2.txt:    
-    < test2.txt:	
-    < test2.txt:	
-    < test2.txt:	
-    < test2.txt:	
-    < test2.txt:	
-    < test2.txt:	
-    < test2.txt:	
-    < test2.txt:	
-    < test2.txt:	
-    < test1.txt:WARNING
-    < test1.txt:Str !
-    < test1.txt:    Sdfshg sfgjhf sjhf Sdfbjhd
-    < test1.txt:                
-    < test1.txt:        S
-    < test1.txt:    45 45 2
-    < test1.txt:    D sd.Jhj fwfs D2f Sdks Ves
-    < test1.txt:        end.
-    < test1.txt:	
-    < test1.txt:    
-    < test1.txt:Hi Vshe he Vs vS vsvs VS
+    14a15
+    > test1.txt:    
+    15a17,20
+    > test1.txt:    
+    > test1.txt:    
+    > test1.txt:    
+    > test1.txt:    
+    16a22,23
+    > test1.txt:    
+    > test1.txt:    
+    17a25
+    > test1.txt:    
+    18a27
+    > test1.txt:    
+    19a29,30
+    > test1.txt:    
+    > test1.txt:    
 
