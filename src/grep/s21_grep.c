@@ -57,11 +57,24 @@ static char **load_patterns_from_file(const char *fname, int *out_count) {
       line[nread - 1] = '\0';
       nread--;
     }
-    if (*out_count >= cap) {
-      cap = cap ? cap * 2 : 16;
-      char **tmp = realloc(pats, cap * sizeof(char *));
-      if (!tmp) {
-        // Return Null if Realloc couldnt work
+    if (nread != 0) {
+      if (*out_count >= cap) {
+        cap = cap ? cap * 2 : 16;
+        char **tmp = realloc(pats, cap * sizeof(char *));
+        if (!tmp) {
+          // Return Null if Realloc couldnt work
+          for (int i = 0; i < *out_count; i++)
+            free(pats[i]);
+          free(pats);
+          free(line);
+          fclose(f);
+          return NULL;
+        }
+        pats = tmp;
+      }
+      pats[*out_count] = strdup(line);
+      if (!pats[*out_count]) {
+        // Return null if strdup couldnt work
         for (int i = 0; i < *out_count; i++)
           free(pats[i]);
         free(pats);
@@ -69,19 +82,8 @@ static char **load_patterns_from_file(const char *fname, int *out_count) {
         fclose(f);
         return NULL;
       }
-      pats = tmp;
+      (*out_count)++;
     }
-    pats[*out_count++] = strdup(line);
-    if (!pats[*out_count]) {
-      // Return null if strdup couldnt work
-      for (int i = 0; i < *out_count; i++)
-        free(pats[i]);
-      free(pats);
-      free(line);
-      fclose(f);
-      return NULL;
-    }
-    (*out_count)++;
   }
 
   free(line);
@@ -396,7 +398,7 @@ Result grep_file(const char *filename, char **patterns, int pat_count,
         if (pm.rm_eo > pm.rm_so) {
           cursor += pm.rm_eo;
         } else {
-          cursor += 1;
+          cursor = line + nread + 1;
         }
         // Si el cursor avanza más allá del final, cortamos
         if (cursor > line + nread)
@@ -417,7 +419,6 @@ Result grep_file(const char *filename, char **patterns, int pat_count,
     if (flags.l && any_match) {
       if (filename) {
         printf("%s\n", filename);
-        matched_file = 1;
       }
       free(matches);
       stop_processing = 1;
@@ -438,12 +439,16 @@ Result grep_file(const char *filename, char **patterns, int pat_count,
         if (mcount > 1)
           qsort(matches, mcount, sizeof(Match), compare_match);
         for (int mi = 0; mi < mcount; mi++) {
-          if (!flags.h && filename && total_files > 1)
-            printf("%s:", filename);
-          if (flags.n)
-            printf("%d:", line_no);
-          printf("%.*s\n", (int)(matches[mi].eo - matches[mi].so),
-                 line + matches[mi].so);
+          int dup = (mi > 0 && matches[mi].so == matches[mi - 1].so &&
+                     matches[mi].eo == matches[mi - 1].eo);
+          if (!dup) {
+            if (!flags.h && filename && total_files > 1)
+              printf("%s:", filename);
+            if (flags.n)
+              printf("%d:", line_no);
+            printf("%.*s\n", (int)(matches[mi].eo - matches[mi].so),
+                   line + matches[mi].so);
+          }
         }
       }
       // Caso imprimir línea completa
@@ -462,7 +467,7 @@ Result grep_file(const char *filename, char **patterns, int pat_count,
   // --------------------------------------------------
   // 7) Si -c y no imprimimos ya con -l, imprimimos conteo
   // --------------------------------------------------
-  if (flags.c && !(flags.l && matched_file)) {
+  if (flags.c && !flags.l) {
     if (!flags.h && filename && total_files > 1)
       printf("%s:", filename);
     printf("%d\n", match_count);
