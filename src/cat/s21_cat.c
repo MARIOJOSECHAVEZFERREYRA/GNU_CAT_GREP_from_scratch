@@ -5,11 +5,18 @@
 
 #include <stdlib.h>
 
-//CAMBIAR, ESTO SI ES UNA VARIABLE GLOBAL
-static int line_num = 1; //special for multiple files
-
 int main(int argc, char *argv[]) {
     Flags flags = {0};
+    int line_num = 1;
+    struct option long_options[] = {
+        {"number-nonblank", no_argument,       0, 'b'},
+        {"number",          no_argument,       0, 'n'},
+        {"squeeze-blank",   no_argument,       0, 's'},
+        {"show-ends",       no_argument,       0, 'E'},
+        {"show-nonprinting",no_argument,       0, 'v'},
+        {"show-tabs",       no_argument,       0, 'T'},
+        {0, 0, 0, 0}
+    };
     int opt;
     while ((opt = getopt_long(argc, argv, "benstvET", long_options, NULL)) != -1) {
         switch (opt) {
@@ -39,19 +46,17 @@ int main(int argc, char *argv[]) {
     argc -= optind;
     argv += optind;
 
-    line_num = 1; //it initializes only once
-
     if (argc == 0) {
-        cat_file(NULL, flags);
+        cat_file(NULL, flags, &line_num);
     } else {
         for (int i = 0; i < argc; i++) {
-            cat_file(argv[i], flags);
+            cat_file(argv[i], flags, &line_num);
         }
     }
     return 0;
 }
 
-void cat_file(const char *filename, Flags flags) {
+void cat_file(const char *filename, Flags flags, int *line_num) {
     FILE *f = filename ? fopen(filename, "r") : stdin;
     if (!f) {
         perror(filename);
@@ -70,10 +75,10 @@ void cat_file(const char *filename, Flags flags) {
         if (!skip) {
             if (flags.b) {
                 if (!is_blank) {
-                    printf("%6d\t", line_num++);
+                    printf("%6d\t", (*line_num)++);
                 }
             } else if (flags.n) {
-                printf("%6d\t", line_num++);
+                printf("%6d\t", (*line_num)++);
             }
 
             if (is_blank) {
