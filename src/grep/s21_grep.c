@@ -3,11 +3,14 @@
 //
 //  • Returns 0 if at least one match was found.
 //  • Returns 1 if it finished without finding any matches.
-//  • Returns 2 if there was a usage error (e.g. -e without an argument, -f unable to open)
+//  • Returns 2 if there was a usage error (e.g. -e without an argument, -f
+//  unable to open)
 //    or if a file could not be opened (unless -s is used).
 // ========================================================================
 #define _POSIX_C_SOURCE 200809L
 #define _GNU_SOURCE
+
+#include "s21_grep.h"
 
 #include <errno.h>
 #include <regex.h>
@@ -15,463 +18,336 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "s21_grep.h"
 
-typedef struct {
-  size_t so;
-  size_t eo;
-} Match;
-
-
-static int compare_match(const void *a, const void *b) {
-  const Match *A = (const Match *) a;
-  const Match *B = (const Match *) b;
-  if (A->so < B->so)
-    return -1;
-  if (A->so > B->so)
-    return 1;
-  return 0;
-}
-
-// --------------------------------------------------
-// Load patterns from a file (one per line).
-// Returns an array [pats] of pointers (strdup) and sets out_count to the number of patterns.
-// If fopen fails, returns NULL and out_count = 0.
-// --------------------------------------------------
-static char **load_patterns_from_file(const char *fname, int *out_count) {
-  FILE *f = fopen(fname, "r");
-  if (!f)
-    return NULL;
-
-  char **pats = NULL;
-  int cap = 0;
-  *out_count = 0;
-
-  char *line = NULL;
-  size_t len = 0;
-  ssize_t nread;
-
-  while ((nread = getline(&line, &len, f)) != -1) {
-    //we change the last pointer of line to \n to \0 to convert it to a word
-    if (nread > 0 && line[nread - 1] == '\n') {
-      line[nread - 1] = '\0';
-      nread--;
-    }
-    if (nread == 0)
-      continue;
-    if (*out_count >= cap) {
-      cap = cap ? cap * 2 : 16;
-      char **tmp = realloc(pats, cap * sizeof(char *));
-      if (!tmp) {
-        // Return Null if Realloc couldnt work
-        for (int i = 0; i < *out_count; i++)
-          free(pats[i]);
-        free(pats);
-        free(line);
-        fclose(f);
-        return NULL;
-      }
-      pats = tmp;
-    }
-    pats[*out_count] = strdup(line);
-    if (!pats[*out_count]) {
-      // Return null if strdup couldnt work
-      for (int i = 0; i < *out_count; i++)
-        free(pats[i]);
-      free(pats);
-      free(line);
-      fclose(f);
-      return NULL;
-    }
-    (*out_count)++;
-  }
-
-  free(line);
-  fclose(f);
-  return pats;
-}
-
-
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
+  int exit_status = G_NO_MATCH;
+  LinesList patterns = {0, NULL};
   Flags flags = {0};
-  int opt;
-  int any_match_global = 0;
-  int any_error = 0;
 
-  // Reservamos espacio para 'argc' patrones como máximo
-  int cap = argc;
-  char **patterns = malloc(cap * sizeof(char *));
-  int *pat_alloc = malloc(cap * sizeof(int));
-  if (!patterns || !pat_alloc) {
-    fprintf(stderr, "Memory allocation failure\n");
-    return 2;
-  }
-  // Inicializamos pat_alloc a 0
-  for (int i = 0; i < cap; i++) {
-    patterns[i] = NULL;
-    pat_alloc[i] = 0;
-  }
-  int pat_count = 0;
-
-  while ((opt = getopt(argc, argv, "e:ivclnhsf:o")) != -1) {
-    switch (opt) {
-    case 'e':
-      if (pat_count >= cap) {
-        cap *= 2;
-        char **tmp1 = realloc(patterns, cap * sizeof(char *));
-        int *tmp2 = realloc(pat_alloc, cap * sizeof(int));
-        if (!tmp1 || !tmp2) {
-          fprintf(stderr, "Memory allocation failure\n");
-          return 2;
+  int first_file = parseInput(argc, argv, &flags, &patterns);
+  regex_t regexes[patterns.count];
+  if (argc < 2 || first_file < 0) {
+    printUsage(argv[0]);
+    exit_status = G_USAGE_ERROR;
+  } else {
+    int total_files = argc - first_file;
+    if (total_files == 0) {
+      fprintf(stderr, "error: at least one file is needed\n");
+      exit_status = G_USAGE_ERROR;
+    } else {
+      // compile patterns
+      if (prepareRegex(&patterns, regexes, &flags) != G_SUCCESS) {
+        exit_status = G_USAGE_ERROR;
+      } else {
+        // proccess each file
+        for (int i = first_file; i < argc && exit_status != G_USAGE_ERROR;
+             i++) {
+          int match_count = 0;
+          int rc = grepFile(argv[i], &patterns, regexes, flags, total_files,
+                            &match_count);
+          if (rc == G_USAGE_ERROR) {
+            exit_status = G_USAGE_ERROR;
+          } else if (match_count > 0) {
+            exit_status = G_SUCCESS;
+          }
         }
-        patterns = tmp1;
-        pat_alloc = tmp2;
       }
-      patterns[pat_count] = optarg;
-      pat_alloc[pat_count] = 0; // no se hizo strdup
-      pat_count++;
-      flags.e = 1;
-      break;
-    case 'i':
-      flags.i = 1;
-      break;
-    case 'v':
-      flags.v = 1;
-      break;
+    }
+  }
+
+  for (size_t i = 0; i < patterns.count; i++) {
+    regfree(&regexes[i]);
+  }
+  freeLinesList(&patterns);
+  return exit_status;
+}
+
+int grepFile(const char* filename, LinesList* patterns, regex_t regexes[],
+             Flags flags, int total_files, int* out_match_count) {
+  int err_code = G_SUCCESS;
+  *out_match_count = 0;
+  FILE* file = fopen(filename, "r");
+  if (file == NULL) {
+    if (!flags.s) perror(filename);
+    err_code = G_USAGE_ERROR;
+  } else {
+    LinesList selected_lines = {0, NULL};
+    err_code = extractMatchingLines(file, &flags, &selected_lines,
+                                    patterns->count, regexes);
+    if (err_code == G_SUCCESS) {
+      if (flags.l) {
+        if (selected_lines.count > 0) {
+          puts(filename);
+        }
+        *out_match_count = selected_lines.count;
+      } else if (flags.c) {
+        if (total_files > 1 && !flags.h) printf("%s:", filename);
+        printf("%zu\n", selected_lines.count);
+        *out_match_count = selected_lines.count;
+      } else if (flags.o) {
+        if (flags.v) {
+          // -v -o: no imprimimos, pero contamos líneas NO coincidentes
+          *out_match_count = selected_lines.count;
+        } else {
+          LinesList selected_substrings = {0, NULL};
+          for (size_t i = 0; i < selected_lines.count && err_code == G_SUCCESS;
+               i++) {
+            int sub_err =
+                extractMatches(&selected_lines.lines[i], &selected_substrings,
+                               patterns->count, regexes);
+            if (sub_err != G_SUCCESS) {
+              err_code = sub_err;
+            }
+          }
+          if (err_code == G_SUCCESS) {
+            printSelectedLines(&flags, &selected_substrings,
+                               (total_files > 1 && !flags.h) ? filename : NULL);
+            *out_match_count = selected_substrings.count;
+          }
+          freeLinesList(&selected_substrings);
+        }
+      } else {
+        printSelectedLines(&flags, &selected_lines,
+                           (total_files > 1 && !flags.h) ? filename : NULL);
+        *out_match_count = selected_lines.count;
+      }
+    }
+    freeLinesList(&selected_lines);
+    fclose(file);
+  }
+  return err_code;
+}
+
+//======================================================================================
+// FOR INPUT FLAGS
+//======================================================================================
+int parseInput(int argc, char* argv[], Flags* flags, LinesList* patterns) {
+  int result = G_SUCCESS;
+  int opt;
+  while (result == G_SUCCESS &&
+         (opt = getopt(argc, argv, "e:f:chilnosv")) != -1) {
+    if (opt == 'e') {
+      result = addLineToLineList(patterns, optarg, 0);
+    } else if (opt == 'f') {
+      result = readPatternFromFile(patterns, optarg);
+    } else if (opt == '?') {
+      result = G_USAGE_ERROR;
+    } else {
+      markFlags(flags, opt);
+    }
+  }
+  if (result == G_SUCCESS && patterns->count == 0)
+    result = (optind == argc) ? G_SUCCESS
+                              : addLineToLineList(patterns, argv[optind++], 0);
+  return result == G_SUCCESS ? optind : result;
+}
+//======================================================================================
+void markFlags(Flags* flags, int opt) {
+  switch (opt) {
     case 'c':
-      flags.c = 1;
-      break;
-    case 'l':
-      flags.l = 1;
-      break;
-    case 'n':
-      flags.n = 1;
+      flags->c = 1;
       break;
     case 'h':
-      flags.h = 1;
+      flags->h = 1;
       break;
-    case 's':
-      flags.s = 1;
+    case 'i':
+      flags->i = 1;
+      break;
+    case 'l':
+      flags->l = 1;
+      break;
+    case 'n':
+      flags->n = 1;
       break;
     case 'o':
-      flags.o = 1;
+      flags->o = 1;
       break;
-
-    case 'f': {
-      // Cargar patrones desde archivo
-      flags.e = 1;
-      int fromf_count = 0;
-      char **fromf = load_patterns_from_file(optarg, &fromf_count);
-      if (!fromf) {
-        // Error al abrir o en malloc: igual que grep estándar → exit 2
-        if (!flags.s)
-          perror(optarg);
-        free(patterns);
-        free(pat_alloc);
-        return 2;
-      }
-      for (int i = 0; i < fromf_count; i++) {
-        if (pat_count >= cap) {
-          cap *= 2;
-          char **tmp1 = realloc(patterns, cap * sizeof(char *));
-          int *tmp2 = realloc(pat_alloc, cap * sizeof(int));
-          if (!tmp1 || !tmp2) {
-            fprintf(stderr, "Memory allocation failure\n");
-            return 2;
-          }
-          patterns = tmp1;
-          pat_alloc = tmp2;
-        }
-        patterns[pat_count] = fromf[i];
-        pat_alloc[pat_count] = 1; // marcar que viene de strdup
-        pat_count++;
-      }
-      free(fromf);
+    case 's':
+      flags->s = 1;
       break;
-    }
-
-    default:
-      fprintf(stderr,
-              "Usage: %s [-e pattern] [-f file] [-i] [-v] [-c] "
-              "[-l] [-n] [-h] [-s] [-o] [pattern] [file...]\n",
-              argv[0]);
-      free(patterns);
-      free(pat_alloc);
-      return 2;
-    }
+    case 'v':
+      flags->v = 1;
+      break;
   }
-
-  argc -= optind;
-  argv += optind;
-
-  // Si no se usaron -e ni -f, el primer argumento es el patrón
-  if (pat_count == 0) {
-    if (argc > 0) {
-      if (pat_count >= cap) {
-        cap *= 2;
-        patterns = realloc(patterns, cap * sizeof(char *));
-        pat_alloc = realloc(pat_alloc, cap * sizeof(int));
-        if (!patterns || !pat_alloc) {
-          fprintf(stderr, "Memory allocation failure\n");
-          return 2;
-        }
-      }
-      patterns[pat_count] = argv[0];
-      pat_alloc[pat_count] = 0;
-      pat_count++;
-      argv++;
-      argc--;
-    } else {
-      fprintf(stderr, "grep: missing pattern\n");
-      free(patterns);
-      free(pat_alloc);
-      return 2;
-    }
-  }
-
-  // File proccessing
-  int total_files = argc;
-  if (total_files == 0) {
-    Result r = grep_file(NULL, patterns, pat_count, flags, total_files);
-    if (r.match_found)
-      any_match_global = 1;
-    if (r.error)
-      any_error = 1;
-  } else {
-    for (int i = 0; i < total_files; i++) {
-      Result r = grep_file(argv[i], patterns, pat_count, flags, total_files);
-      if (r.match_found)
-        any_match_global = 1;
-      if (r.error)
-        any_error = 1;
-    }
-  }
-
-  // --------------------------------------------------
-  // 4) Liberar memoria de patrones (solo los que vienen de strdup)
-  // --------------------------------------------------
-  for (int i = 0; i < pat_count; i++) {
-    if (pat_alloc[i]) {
-      free(patterns[i]);
-    }
-  }
-  free(patterns);
-  free(pat_alloc);
-
-  // --------------------------------------------------
-  // 5) Devolver el código de salida
-  // --------------------------------------------------
-  if (any_error)
-    return 2;
-  else if (any_match_global)
-    return 0;
-  else
-    return 1;
 }
-
-// =======================================================================
-// grep_file: procesa un solo "archivo" (o stdin si filename==NULL).
-//
-//   • Si no puede abrir el archivo y no hay -s, marca any_error=1 y retorna.
-//   • Compila todos los patrones con regcomp. Si falla regcomp → error=1,
-//   retorna. • Lee línea a línea con getline, suprimiendo '\n' al final. • Por
-//   cada línea, recorre cada patrón con regexec en bucle para sacar TODAS
-//     las apariciones. Si detecta match de longitud 0, avanza cursor en +1 para
-//     no quedar en bucle infinito.
-//   • Se salta el “cursor” más allá de “line + nread” para evitar regexec fuera
-//   de rango. • Aplica flags: -v, -l, -c, -n, -h, -o tal cual lo haría grep. •
-//   Al final cierra fichero y libera todo.
-// =======================================================================
-Result grep_file(const char *filename, char **patterns, int pat_count,
-                 Flags flags, int total_files) {
-  Result res = {0, 0};
-  FILE *f = filename ? fopen(filename, "r") : stdin;
-  if (!f) {
-    if (!flags.s) {
-      perror(filename);
+//======================================================================================
+//======================================================================================
+int extractMatchingLines(FILE* file, Flags* flags, LinesList* result,
+                         int patternCount, regex_t regexes[patternCount]) {
+  int err_code = G_SUCCESS;
+  char* line = NULL;
+  size_t linesize = 0;
+  ssize_t linelen = 0;
+  size_t line_counter = 0;
+  while (err_code == G_SUCCESS && (!flags->l || result->count == 0) &&
+         (linelen = getline(&line, &linesize, file)) != -1) {
+    ++line_counter;
+    /* Quitar '\n' final */
+    if (linelen > 0 && line[linelen - 1] == '\n') {
+      line[linelen - 1] = '\0';
     }
-    res.error = 1;
-    return res;
-  }
-
-  // --------------------------------------------------
-  // 1) Compilar todos los patrones en regex_t
-  // --------------------------------------------------
-  regex_t *regs = malloc(pat_count * sizeof(regex_t));
-  if (!regs) {
-    fprintf(stderr, "Memory allocation failure\n");
-    if (f != stdin)
-      fclose(f);
-    res.error = 1;
-    return res;
-  }
-  int regc_flags = flags.i ? REG_ICASE : 0;
-  for (int p = 0; p < pat_count; p++) {
-    if (regcomp(&regs[p], patterns[p], regc_flags) != 0) {
-      fprintf(stderr, "Invalid regex: %s\n", patterns[p]);
-      // Liberar los que sí se compilaron
-      while (p--) {
-        regfree(&regs[p]);
-      }
-      free(regs);
-      if (f != stdin)
-        fclose(f);
-      res.error = 1;
-      return res;
-    }
-  }
-
-  // --------------------------------------------------
-  // 2) Leer línea a línea
-  // --------------------------------------------------
-  char *line = NULL;
-  size_t len = 0;
-  ssize_t nread = 0;
-
-  int line_no = 1;
-  int match_count = 0;  // para -c
-  int stop_processing = 0;
-
-  while ((nread = getline(&line, &len, f)) != -1 && !stop_processing) {
-    // Suprimir '\n' para que ^$ funcione exactamente como grep
-    if (nread > 0 && line[nread - 1] == '\n') {
-      line[nread - 1] = '\0';
-      nread--;
-    }
-
-    // --------------------------------------------------
-    // 3) Buscar todas las coincidencias para cada patrón
-    // --------------------------------------------------
-    int mcap = 16;
-    Match *matches = malloc(mcap * sizeof(Match));
-    if (!matches) {
-      fprintf(stderr, "Memory allocation failure\n");
-      free(line);
-      for (int q = 0; q < pat_count; q++)
-        regfree(&regs[q]);
-      free(regs);
-      if (f != stdin)
-        fclose(f);
-      res.error = 1;
-      return res;
-    }
-    int mcount = 0;
-
-    int any_match_in_line = 0;  // Controlar si hay coincidencias en la línea
-
-    for (int p = 0; p < pat_count; p++) {
-      char *cursor = line;
-      regmatch_t pm;
-
-      // Buscamos múltiples ocurrencias del patrón p
-      while (cursor <= line + nread) {
-        int ret = regexec(&regs[p], cursor, 1, &pm, 0);
-        if (ret != 0) {
-          cursor = line + nread + 1;
-        } else {
-          // Si aquí hay match, guardamos su rango
-          size_t so = (cursor - line) + pm.rm_so;
-          size_t eo = (cursor - line) + pm.rm_eo;
-
-          if (mcount >= mcap) {
-            mcap *= 2;
-            Match *tmp = realloc(matches, mcap * sizeof(Match));
-            if (!tmp) {
-              fprintf(stderr, "Memory allocation failure\n");
-              free(matches);
-              free(line);
-              for (int q = 0; q < pat_count; q++)
-                regfree(&regs[q]);
-              free(regs);
-              if (f != stdin)
-                fclose(f);
-              res.error = 1;
-              return res;
-            }
-            matches = tmp;
-          }
-          matches[mcount].so = so;
-          matches[mcount].eo = eo;
-          mcount++;
-
-          // Evitar bucle infinito si rm_eo == rm_so
-          if (pm.rm_eo > pm.rm_so) {
-            cursor += pm.rm_eo;
-            any_match_in_line = 1;  // Marcar que hubo coincidencia
-          } else {
-            cursor = line + nread + 1;
-          }
-
-          // Si el cursor avanza más allá del final, cortamos
-          if (cursor > line + nread)
-            cursor = line + nread + 1;
-        }
+    int reg_result = REG_NOMATCH;
+    for (int i = 0;
+         err_code == G_SUCCESS && i < patternCount && reg_result != 0; i++) {
+      reg_result = regexec(&regexes[i], line, 0, NULL, 0);
+      if (reg_result != 0 && reg_result != REG_NOMATCH) {
+        err_code = G_USAGE_ERROR;
+        fprintf(stderr, "exec: could not exec regex\n");
       }
     }
 
-    // 4) Si -v, negamos las coincidencias
-    int final_match = any_match_in_line;
-    if (flags.v)
-      final_match = !final_match;
-
-    if (final_match) {
-      res.match_found = 1;
-    }
-
-    // 5) Si -l y encontramos match: imprimimos nombre de archivo y cortamos
-    if (flags.l && final_match) {
-      if (filename) {
-        printf("%s\n", filename);
+    if (err_code == G_SUCCESS) {
+      if (flags->v) {
+        reg_result = (reg_result == 0 ? REG_NOMATCH : 0);
       }
-      stop_processing = 1; // Usamos esta variable para evitar la necesidad de 'break'
-    }
-
-    // 6) Si hay coincidencia y no -l, contamos para -c
-    if (final_match && !flags.l)
-      match_count++;
-
-    // 7) Si any_match y no -c ni -l, imprimimos según -o/-n/-h
-    if (final_match && !flags.c && !flags.l) {
-      if (flags.o && !flags.v) {
-        if (mcount > 1)
-          qsort(matches, mcount, sizeof(Match), compare_match);
-        for (int mi = 0; mi < mcount; mi++) {
-          int dup = (mi > 0 && matches[mi].so == matches[mi - 1].so &&
-                     matches[mi].eo == matches[mi - 1].eo);
-          if (!dup) {
-            if (!flags.h && filename && total_files > 1)
-              printf("%s:", filename);
-            if (flags.n)
-              printf("%d:", line_no);
-            printf("%.*s\n", (int)(matches[mi].eo - matches[mi].so),
-                   line + matches[mi].so);
-          }
-        }
-      } else if (!flags.o) {
-        if (!flags.h && filename && total_files > 1)
-          printf("%s:", filename);
-        if (flags.n)
-          printf("%d:", line_no);
-        printf("%s\n", line);
+      if (reg_result == 0) {
+        err_code = addLineToLineList(result, line, line_counter);
       }
     }
-    line_no++;
-    free(matches);
   }
 
-  // 8) Si -c y no imprimimos ya con -l, imprimimos conteo
-  if (flags.c && !flags.l) {
-    if (!flags.h && filename && total_files > 1)
-      printf("%s:", filename);
-    printf("%d\n", match_count);
+  if (linelen == -1 && !feof(file)) {
+    err_code = G_USAGE_ERROR;
+    perror("getline");
   }
-
-  // 9) Liberar regex y buffer de línea
-  for (int p = 0; p < pat_count; p++)
-    regfree(&regs[p]);
-  free(regs);
   free(line);
-  if (f != stdin)
-    fclose(f);
-  return res;
+  return err_code;
 }
+//======================================================================================
+int prepareRegex(LinesList* patterns, regex_t* regexes, Flags* flags) {
+  int err_code = G_SUCCESS;
+  int regcomp_flags = REG_EXTENDED;
+  if (flags->i) regcomp_flags |= REG_ICASE;
+
+  for (size_t i = 0; err_code == G_SUCCESS && i < patterns->count; i++) {
+    if (regcomp(&regexes[i], patterns->lines[i].value, regcomp_flags) != 0) {
+      fprintf(stderr, "regcomp: could not compile regex \"%s\"\n",
+              patterns->lines[i].value);
+      err_code = G_USAGE_ERROR;
+    }
+  }
+
+  return err_code;
+}
+//======================================================================================
+int addLineToLineList(LinesList* linelist, char* line, size_t lineNumber) {
+  int result = G_SUCCESS;
+  linelist->lines = realloc(linelist->lines,
+                            sizeof(*linelist->lines) * (linelist->count + 1));
+
+  if (linelist->lines == NULL) {
+    result = G_USAGE_ERROR;
+    perror("realloc");
+  } else {
+    linelist->lines[linelist->count].value =
+        (char*)calloc(strlen(line) + 1, sizeof(char));
+    if (linelist->lines[linelist->count].value == NULL) {
+      result = G_USAGE_ERROR;
+      perror("malloc");
+    } else {
+      strcpy(linelist->lines[linelist->count].value, line);
+      linelist->lines[linelist->count].number = lineNumber;
+      linelist->count++;
+    }
+  }
+  return result;
+}
+//======================================================================================
+void freeLinesList(LinesList* linelist) {
+  for (size_t i = 0; i < linelist->count; i++) free(linelist->lines[i].value);
+  free(linelist->lines);
+}
+//======================================================================================
+void printUsage(const char* programName) {
+  fprintf(stderr,
+          "Usage: %s [-e pattern] [-f file] [-i] [-v] [-c] "
+          "[-l] [-n] [-h] [-s] [-o] [pattern] [file...]\n",
+          programName);
+}
+//======================================================================================
+void printSelectedLines(Flags* flags, LinesList* lines, const char* filepath) {
+  for (size_t i = 0; i < lines->count; i++) {
+    if (filepath && !flags->h) printf("%s:", filepath);
+    if (flags->n) printf("%zu:", lines->lines[i].number);
+
+    printf("%s\n", lines->lines[i].value);
+  }
+}
+//======================================================================================
+// THIS IS FOR -F
+int readPatternFromFile(LinesList* patterns, const char* filename) {
+  int result = G_SUCCESS;
+  FILE* pat_file = fopen(filename, "r");
+  if (pat_file == NULL) {
+    result = G_USAGE_ERROR;
+    perror(filename);
+  } else {
+    ssize_t linelen;
+    char* line = NULL;
+    size_t linesize = 0;
+    while (result == G_SUCCESS &&
+           (linelen = getline(&line, &linesize, pat_file)) != -1) {
+      if (linelen > 0 && line[linelen - 1] == '\n') {
+        line[linelen - 1] = '\0';
+      }
+      result = addLineToLineList(patterns, line, 0);
+    }
+    if (linelen == -1 && !feof(pat_file)) {
+      result = G_USAGE_ERROR;
+      perror("getline");
+    }
+    free(line);
+    fclose(pat_file);
+  }
+  return result;
+}
+//======================================================================================
+// FOR -o
+//======================================================================================
+int extractMatches(Line* line, LinesList* matches, int patternCount,
+                   regex_t regexes[patternCount]) {
+  int result = G_SUCCESS;
+  char* scanPtr = line->value;
+  int matchFound = 0;  // 0 == match OK, REG_NOMATCH==1 no hay match
+  while (result == G_SUCCESS && matchFound == 0) {
+    matchFound = REG_NOMATCH;
+    int regexFlags = (scanPtr == line->value) ? 0 : REG_NOTBOL;
+    regmatch_t bestMatch = {.rm_so = (int)strlen(scanPtr) + 1, .rm_eo = -1};
+    for (int i = 0; result == G_SUCCESS && i < patternCount; i++) {
+      regmatch_t candidateMatch;
+      int rc = regexec(&regexes[i], scanPtr, 1, &candidateMatch, regexFlags);
+      if (rc != 0 && rc != REG_NOMATCH) {
+        result = G_USAGE_ERROR;
+        fprintf(stderr, "exec: could not exec regex\n");
+      } else if (rc == 0 && candidateMatch.rm_eo > candidateMatch.rm_so) {
+        if (compareLeftMostLongestMatches(&bestMatch, &candidateMatch)) {
+          bestMatch = candidateMatch;
+          matchFound = 0;
+        }
+      }
+    }
+    if (result == G_SUCCESS && matchFound == 0) {
+      int substrLen = bestMatch.rm_eo - bestMatch.rm_so;
+      char buf[substrLen + 1];
+      strncpy(buf, scanPtr + bestMatch.rm_so, substrLen);
+      buf[substrLen] = '\0';
+      result = addLineToLineList(matches, buf, line->number);
+      scanPtr += bestMatch.rm_eo;
+    }
+  }
+  return result;
+}
+//======================================================================================
+int compareLeftMostLongestMatches(regmatch_t* currentBest,
+                                  regmatch_t* candidate) {
+  int is_better = 0;
+  if (candidate->rm_so < currentBest->rm_so) {
+    is_better = 1;
+  } else if (candidate->rm_so == currentBest->rm_so &&
+             candidate->rm_eo > currentBest->rm_eo) {
+    is_better = 1;
+  }
+
+  return is_better;
+}
+//======================================================================================
